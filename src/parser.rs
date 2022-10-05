@@ -3,6 +3,27 @@ use crate::{File, HexDump, Machine, Type};
 pub type Input<'a> = &'a [u8];
 pub type Result<'a, O> = nom::IResult<Input<'a>, O, nom::error::VerboseError<Input<'a>>>;
 
+#[macro_export]
+macro_rules! impl_parse_for_enum {
+    ($type: ident, $number_parser: ident) => {
+        impl $type {
+            pub fn parse(i: parser::Input) -> parser::Result<Self> {
+                use nom::{
+                    combinator::map_res,
+                    error::{context, ErrorKind},
+                    number::complete::le_u16,
+                };
+
+                let parser = map_res($number_parser, |x| {
+                    Self::try_from(x).map_err(|_| ErrorKind::Alt)
+                });
+
+                context(stringify!($type), parser)(i)
+            }
+        }
+    };
+}
+
 impl File {
     const MAGIC: &'static [u8] = &[0x7f, 0x45, 0x4c, 0x46];
 
@@ -28,9 +49,7 @@ impl File {
     pub fn parse(i: Input) -> self::Result<Self> {
         use nom::{
             bytes::complete::{tag, take},
-            combinator::map,
             error::context,
-            number::complete,
             sequence::tuple,
         };
 
@@ -43,16 +62,7 @@ impl File {
             context("Padding", take(8usize)),
         ))(i)?;
 
-        let (i, (typ, machine)) = tuple((
-            context(
-                "Type",
-                map(complete::le_u16, |x| Type::try_from(x).unwrap()),
-            ),
-            context(
-                "Machine",
-                map(complete::le_u16, |x| Machine::try_from(x).unwrap()),
-            ),
-        ))(i)?;
+        let (i, (typ, machine)) = tuple((Type::parse, Machine::parse))(i)?;
 
         Ok((i, Self { typ, machine }))
     }

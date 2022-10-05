@@ -28,6 +28,9 @@ pub enum Machine {
     X86_64 = 0x3e,
 }
 
+impl_parse_for_enum!(Type, le_u16);
+impl_parse_for_enum!(Machine, le_u16);
+
 pub struct HexDump<'a>(&'a [u8]);
 
 impl<'a> std::fmt::Debug for HexDump<'a> {
