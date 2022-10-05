@@ -1,4 +1,4 @@
-use crate::{File, HexDump, Machine, Type};
+use crate::{Addr, File, HexDump, Machine, Type};
 
 pub type Input<'a> = &'a [u8];
 pub type Result<'a, O> = nom::IResult<Input<'a>, O, nom::error::VerboseError<Input<'a>>>;
@@ -49,7 +49,9 @@ impl File {
     pub fn parse(i: Input) -> self::Result<Self> {
         use nom::{
             bytes::complete::{tag, take},
+            combinator::verify,
             error::context,
+            number::complete::le_u32,
             sequence::tuple,
         };
 
@@ -63,7 +65,17 @@ impl File {
         ))(i)?;
 
         let (i, (typ, machine)) = tuple((Type::parse, Machine::parse))(i)?;
+        // should always be set to 1.
+        let (i, _) = context("Version", verify(le_u32, |&x| x == 1))(i)?;
+        let (i, entry_point) = Addr::parse(i)?;
 
-        Ok((i, Self { typ, machine }))
+        Ok((
+            i,
+            Self {
+                typ,
+                machine,
+                entry_point,
+            },
+        ))
     }
 }
