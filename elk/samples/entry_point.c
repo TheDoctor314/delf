@@ -12,8 +12,16 @@ int main() {
     printf("        main @ %p\n", &main);
     printf("instructions @ %p\n", instructions);
 
-    printf("making instructions executable...\n");
-    int ret = mprotect((void*) instructions, instructions_len, PROT_READ | PROT_EXEC);
+    size_t region = (size_t) instructions;
+    region = region & (~0xFFF);
+    printf("        page @ %p\n", (void*) region);
+
+    printf("making page executable...\n");
+    int ret = mprotect(
+            (void*) region,       // addr
+            0x1000,               // len - now the size of the page (4KiB)
+            PROT_READ | PROT_EXEC // prot
+    );
     if (ret != 0) {
         printf("mprotect failed: error %d\n", errno);
         return 1;
