@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 delf = { version = "0.1.0", path = ".." }
+region = "3.0.0"
