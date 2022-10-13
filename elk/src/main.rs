@@ -1,5 +1,6 @@
 use std::error::Error;
 
+use mmap::{MapOption, MemoryMap};
 use region::Protection;
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -14,7 +15,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
     println!("{file:#?}");
 
-    println!("Disassembling {:?}", input_path);
+    println!("Disassembling {:?}...", input_path);
     let code_ph = file
         .program_headers
         .iter()
@@ -22,23 +23,69 @@ fn main() -> Result<(), Box<dyn Error>> {
         .expect("segment with entry point not found");
     ndisasm(code_ph.data.as_slice(), file.entry_point)?;
 
-    println!("Executing {:?} in memory", input_path);
-    let code = &code_ph.data;
+    println!("Mapping {:?} in memory...", input_path);
+    let mut mappings = Vec::new();
 
-    unsafe {
-        region::protect(code.as_ptr(), code.len(), Protection::READ_WRITE_EXECUTE)?;
+    // interested only in "Load" segments
+    for ph in file
+        .program_headers
+        .iter()
+        .filter(|ph| ph.typ == delf::SegmentType::Load)
+    {
+        println!("Mapping segment @ {:?} with {:?}", ph.mem_range(), ph.flags);
+
+        // NOTE: mmap-ing would fail if the segments were not aligned on
+        // pages, here that's not a problem.
+        let mem_range = ph.mem_range();
+        let len: usize = (mem_range.end - mem_range.start).into();
+        let addr: *mut u8 = mem_range.start.0 as _;
+
+        // first, we want the map to be writable to copy the required data.
+        // we can set the correct permissions later.
+        let map = MemoryMap::new(len, &[MapOption::MapWritable, MapOption::MapAddr(addr)])?;
+
+        println!("Copying segment data...");
+        {
+            let dst = unsafe { std::slice::from_raw_parts_mut(addr, ph.data.len()) };
+
+            dst.copy_from_slice(&ph.data[..]);
+        }
+
+        println!("Adjusting permissions...");
+        // mapping from `delf` crate bitflags to `region`s.
+        let mut protection = Protection::NONE;
+        for flag in ph.flags.iter() {
+            protection |= match flag {
+                delf::SegmentFlag::Execute => Protection::EXECUTE,
+                delf::SegmentFlag::Write => Protection::WRITE,
+                delf::SegmentFlag::Read => Protection::READ,
+            };
+        }
+
+        unsafe {
+            region::protect(addr, len, protection)?;
+        }
+
+        mappings.push(map);
     }
 
-    let entry_offset = file.entry_point - code_ph.vaddr;
-    let entry_point = unsafe { code.as_ptr().add(entry_offset.into()) };
-    println!("       code  @ {:?}", code.as_ptr());
-    println!("entry_offset @ {:?}", entry_offset);
-    println!("entry_point  @ {:?}", entry_point);
-
+    let entry_point = file.entry_point;
+    println!("Jumping to entry point @ {:?}", entry_point);
+    pause("jmp")?;
     unsafe {
-        jmp(entry_point);
+        // no pointer arithmetic since the entry point is mapped at
+        // the right locations.
+        jmp(entry_point.0 as _);
     }
 
+    Ok(())
+}
+
+fn pause(label: &str) -> Result<(), Box<dyn Error>> {
+    println!("Press Enter to {}", label);
+    let mut s = String::new();
+
+    std::io::stdin().read_line(&mut s)?;
     Ok(())
 }
 
