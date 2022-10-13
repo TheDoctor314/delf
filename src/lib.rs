@@ -100,6 +100,17 @@ pub enum SegmentType {
     Dynamic = 2,
     Interp = 3,
     Note = 4,
+    ShLib = 5,
+    PHdr = 6,
+    TLS = 7,
+    LoOs = 0x6000_0000,
+    HiOs = 0x6FFF_FFFF,
+    LoProc = 0x7000_0000,
+    HiProc = 0x7FFF_FFFF,
+    GnuEhFrame = 0x6474_E550,
+    GnuStack = 0x6474_E551,
+    GnuRelRo = 0x6474_E552,
+    GnuProperty = 0x6474_E553,
 }
 
 impl_parse_for_enum!(SegmentType, le_u32);
