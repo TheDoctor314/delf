@@ -15,15 +15,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
     println!("{file:#?}");
 
-    println!("Disassembling {:?}...", input_path);
-    let code_ph = file
-        .program_headers
-        .iter()
-        .find(|ph| ph.mem_range().contains(&file.entry_point))
-        .expect("segment with entry point not found");
-    ndisasm(code_ph.data.as_slice(), file.entry_point)?;
+    // println!("Disassembling {:?}...", input_path);
+    // let code_ph = file
+    //     .program_headers
+    //     .iter()
+    //     .find(|ph| ph.mem_range().contains(&file.entry_point))
+    //     .expect("segment with entry point not found");
+    // ndisasm(code_ph.data.as_slice(), file.entry_point)?;
 
     println!("Mapping {:?} in memory...", input_path);
+
+    let base = 0x400000_usize;
     let mut mappings = Vec::new();
 
     // interested only in "Load" segments
@@ -31,6 +33,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         .program_headers
         .iter()
         .filter(|ph| ph.typ == delf::SegmentType::Load)
+        // filter zero length sections
+        .filter(|ph| ph.mem_range().end > ph.mem_range().start)
     {
         println!("Mapping segment @ {:?} with {:?}", ph.mem_range(), ph.flags);
 
@@ -38,7 +42,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         // pages, here that's not a problem.
         let mem_range = ph.mem_range();
         let len: usize = (mem_range.end - mem_range.start).into();
-        let addr: *mut u8 = mem_range.start.0 as _;
+
+        let start = mem_range.start.0 as usize + base;
+        let aligned_start = align_lo(start);
+        let padding = start - aligned_start;
+        let len = len + padding;
+
+        let addr: *mut u8 = aligned_start as _;
+        println!("Addr: {addr:p}, Padding: {padding:08x}");
 
         // first, we want the map to be writable to copy the required data.
         // we can set the correct permissions later.
@@ -46,7 +57,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         println!("Copying segment data...");
         {
-            let dst = unsafe { std::slice::from_raw_parts_mut(addr, ph.data.len()) };
+            let dst = unsafe { std::slice::from_raw_parts_mut(addr.add(padding), ph.data.len()) };
 
             dst.copy_from_slice(&ph.data[..]);
         }
@@ -75,10 +86,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     unsafe {
         // no pointer arithmetic since the entry point is mapped at
         // the right locations.
-        jmp(entry_point.0 as _);
+        jmp((entry_point.0 as usize + base) as _);
     }
 
     Ok(())
+}
+
+/// Truncates a usize to the left-adjacent 4KiB boundary.
+const fn align_lo(addr: usize) -> usize {
+    addr & !0xfff
 }
 
 fn pause(label: &str) -> Result<(), Box<dyn Error>> {
