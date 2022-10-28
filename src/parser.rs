@@ -1,4 +1,7 @@
-use crate::{Addr, File, HexDump, Machine, ProgramHdr, SegmentFlag, SegmentType, Type};
+use crate::{
+    Addr, DynamicEntry, DynamicTag, File, HexDump, Machine, ProgramHdr, SegmentContents,
+    SegmentFlag, SegmentType, Type,
+};
 
 pub type Input<'a> = &'a [u8];
 pub type Result<'a, O> = nom::IResult<Input<'a>, O, nom::error::VerboseError<Input<'a>>>;
@@ -129,13 +132,28 @@ impl File {
 }
 
 impl ProgramHdr {
-    pub fn parse<'a>(full_input: Input, i: Input<'a>) -> self::Result<'a, Self> {
+    pub fn parse<'a>(full_input: Input<'a>, i: Input<'a>) -> self::Result<'a, Self> {
         use nom::sequence::tuple;
 
         let (i, (typ, flags)) = tuple((SegmentType::parse, SegmentFlag::parse))(i)?;
 
         let ap = Addr::parse;
         let (i, (offset, vaddr, paddr, filesz, memsz, align)) = tuple((ap, ap, ap, ap, ap, ap))(i)?;
+
+        use nom::{combinator::map, multi::many_m_n};
+        let slice = &full_input[offset.into()..][..filesz.into()];
+        let (_, contents) = match typ {
+            SegmentType::Dynamic => {
+                // size of the dynamic entry in bytes
+                let entry_size = 16;
+                let n = slice.len() / entry_size;
+                map(
+                    many_m_n(n, n, DynamicEntry::parse),
+                    SegmentContents::Dynamic,
+                )(slice)?
+            }
+            _ => (slice, SegmentContents::Unknown),
+        };
 
         let res = Self {
             typ,
@@ -146,9 +164,18 @@ impl ProgramHdr {
             filesz,
             memsz,
             align,
-            data: full_input[offset.into()..][..filesz.into()].to_vec(),
+            data: slice.to_vec(),
+            contents,
         };
 
         Ok((i, res))
+    }
+}
+
+impl DynamicEntry {
+    pub fn parse(i: Input) -> self::Result<Self> {
+        use nom::sequence::tuple;
+        let (i, (tag, addr)) = tuple((DynamicTag::parse, Addr::parse))(i)?;
+        Ok((i, Self { tag, addr }))
     }
 }

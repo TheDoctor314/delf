@@ -50,6 +50,7 @@ pub struct ProgramHdr {
     pub memsz: Addr,
     pub align: Addr,
     pub data: Vec<u8>,
+    pub contents: SegmentContents,
 }
 
 impl ProgramHdr {
@@ -125,6 +126,61 @@ pub enum SegmentFlag {
 }
 
 impl_parse_for_bitflags!(SegmentFlag, le_u32);
+
+#[derive(Debug)]
+pub enum SegmentContents {
+    Dynamic(Vec<DynamicEntry>),
+    Unknown,
+}
+
+#[derive(Debug)]
+pub struct DynamicEntry {
+    tag: DynamicTag,
+    addr: Addr,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromPrimitive)]
+#[repr(u64)]
+pub enum DynamicTag {
+    Null = 0,
+    Needed = 1,
+    PltRelSz = 2,
+    PltGot = 3,
+    Hash = 4,
+    StrTab = 5,
+    SymTab = 6,
+    Rela = 7,
+    RelaSz = 8,
+    RelaEnt = 9,
+    StrSz = 10,
+    SymEnt = 11,
+    Init = 12,
+    Fini = 13,
+    SoName = 14,
+    RPath = 15,
+    Symbolic = 16,
+    Rel = 17,
+    RelSz = 18,
+    RelEnt = 19,
+    PltRel = 20,
+    Debug = 21,
+    TextRel = 22,
+    JmpRel = 23,
+    BindNow = 24,
+    InitArray = 25,
+    FiniArray = 26,
+    InitArraySz = 27,
+    FiniArraySz = 28,
+    LoOs = 0x6000_0000,
+    HiOs = 0x6fff_ffff,
+    LoProc = 0x7000_0000,
+    HiProc = 0x7fff_ffff,
+    GnuHash = 0x6fff_fef5,
+    Flags1 = 0x6fff_fffb,
+    RelACount = 0x6fff_fff9,
+}
+
+impl_parse_for_enum!(DynamicTag, le_u64);
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Add, Sub)]
 pub struct Addr(pub u64);
