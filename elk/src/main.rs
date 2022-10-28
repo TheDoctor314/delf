@@ -15,13 +15,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
     println!("{file:#?}");
 
-    // println!("Disassembling {:?}...", input_path);
-    // let code_ph = file
-    //     .program_headers
-    //     .iter()
-    //     .find(|ph| ph.mem_range().contains(&file.entry_point))
-    //     .expect("segment with entry point not found");
-    // ndisasm(code_ph.data.as_slice(), file.entry_point)?;
+    println!("Dynamic Entries:");
+    if let Some(ds) = file
+        .program_headers
+        .iter()
+        .find(|ph| ph.typ == delf::SegmentType::Dynamic)
+    {
+        if let delf::SegmentContents::Dynamic(ref table) = ds.contents {
+            for entry in table {
+                println!(" - {:?}", entry);
+            }
+        }
+    }
 
     println!("Mapping {:?} in memory...", input_path);
 
