@@ -140,18 +140,19 @@ impl ProgramHdr {
         let ap = Addr::parse;
         let (i, (offset, vaddr, paddr, filesz, memsz, align)) = tuple((ap, ap, ap, ap, ap, ap))(i)?;
 
-        use nom::{combinator::map, multi::many_m_n};
+        use nom::{
+            combinator::{map, verify},
+            multi::many_till,
+        };
         let slice = &full_input[offset.into()..][..filesz.into()];
         let (_, contents) = match typ {
-            SegmentType::Dynamic => {
-                // size of the dynamic entry in bytes
-                let entry_size = 16;
-                let n = slice.len() / entry_size;
-                map(
-                    many_m_n(n, n, DynamicEntry::parse),
-                    SegmentContents::Dynamic,
-                )(slice)?
-            }
+            SegmentType::Dynamic => map(
+                many_till(
+                    DynamicEntry::parse,
+                    verify(DynamicEntry::parse, |e| e.tag == DynamicTag::Null),
+                ),
+                |(entries, _last)| SegmentContents::Dynamic(entries),
+            )(slice)?,
             _ => (slice, SegmentContents::Unknown),
         };
 
