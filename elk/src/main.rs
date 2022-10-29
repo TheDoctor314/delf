@@ -28,6 +28,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
+    println!("Rela entries:");
+    let rela_entries = file.read_rela_entries()?;
+    for e in &rela_entries {
+        println!("{:#?}", e);
+        if let Some(seg) = file.segment_at(e.offset) {
+            println!("... for {:#?}", seg);
+        }
+    }
+
     println!("Mapping {:?} in memory...", input_path);
 
     let base = 0x400000_usize;
