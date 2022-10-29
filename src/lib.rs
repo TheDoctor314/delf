@@ -11,12 +11,73 @@ pub mod parser;
 #[cfg(test)]
 mod tests;
 
+#[derive(Debug, thiserror::Error)]
+pub enum ReadRelaError {
+    #[error("Rela dynamic entry not found")]
+    RelaNotFound,
+    #[error("RelaSz dynamic entry not found")]
+    RelaSzNotFound,
+    #[error("Rela segment not found")]
+    RelaSegmentNotFound,
+    #[error("Parsing error")]
+    ParsingErr(nom::error::VerboseErrorKind),
+}
+
 #[derive(Debug)]
 pub struct File {
     pub typ: Type,
     pub machine: Machine,
     pub entry_point: Addr,
     pub program_headers: Vec<ProgramHdr>,
+}
+
+impl File {
+    /// Finds the segment whose memory range contains the given address.
+    pub fn segment_at(&self, addr: Addr) -> Option<&ProgramHdr> {
+        self.program_headers
+            .iter()
+            .filter(|ph| ph.typ == SegmentType::Load)
+            .find(|ph| ph.mem_range().contains(&addr))
+    }
+
+    /// Finds the first segment of the matching `SegmentType`.
+    pub fn segment_of_type(&self, typ: SegmentType) -> Option<&ProgramHdr> {
+        self.program_headers.iter().find(|ph| ph.typ == typ)
+    }
+
+    /// Returns the matching dynamic entry.
+    pub fn dynamic_entry(&self, tag: DynamicTag) -> Option<Addr> {
+        match self.segment_of_type(SegmentType::Dynamic) {
+            Some(ProgramHdr {
+                contents: SegmentContents::Dynamic(entries),
+                ..
+            }) => entries.iter().find(|e| e.tag == tag).map(|e| e.addr),
+            _ => None,
+        }
+    }
+
+    pub fn read_rela_entries(&self) -> Result<Vec<Rela>, ReadRelaError> {
+        use DynamicTag as DT;
+        use ReadRelaError as E;
+
+        let addr = self.dynamic_entry(DT::Rela).ok_or(E::RelaNotFound)?;
+        let len = self.dynamic_entry(DT::RelaSz).ok_or(E::RelaSzNotFound)?;
+        let seg = self.segment_at(addr).ok_or(E::RelaSzNotFound)?;
+
+        let i = &seg.data[(addr - seg.mem_range().start).into()..][..len.into()];
+
+        use nom::multi::many0;
+
+        match many0(Rela::parse)(i) {
+            Ok((_, entries)) => Ok(entries),
+            Err(nom::Err::Error(err) | nom::Err::Failure(err)) => {
+                let (_input, error_kind) = &err.errors[0];
+                Err(E::ParsingErr(error_kind.clone()))
+            }
+            // nom::Err::Incomplete(_) is unlikely since we don't use any streaming parsers
+            _ => unreachable!(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromPrimitive)]
@@ -181,6 +242,14 @@ pub enum DynamicTag {
 }
 
 impl_parse_for_enum!(DynamicTag, le_u64);
+
+#[derive(Debug)]
+pub struct Rela {
+    pub offset: Addr,
+    pub typ: u32,
+    pub sym: u32,
+    pub addend: Addr,
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Add, Sub)]
 pub struct Addr(pub u64);

@@ -1,5 +1,5 @@
 use crate::{
-    Addr, DynamicEntry, DynamicTag, File, HexDump, Machine, ProgramHdr, SegmentContents,
+    Addr, DynamicEntry, DynamicTag, File, HexDump, Machine, ProgramHdr, Rela, SegmentContents,
     SegmentFlag, SegmentType, Type,
 };
 
@@ -178,5 +178,23 @@ impl DynamicEntry {
         use nom::sequence::tuple;
         let (i, (tag, addr)) = tuple((DynamicTag::parse, Addr::parse))(i)?;
         Ok((i, Self { tag, addr }))
+    }
+}
+
+impl Rela {
+    pub fn parse(i: Input) -> self::Result<Self> {
+        use nom::{number::complete::le_u32, sequence::tuple};
+
+        let (i, (offset, typ, sym, addend)) = tuple((Addr::parse, le_u32, le_u32, Addr::parse))(i)?;
+
+        Ok((
+            i,
+            Self {
+                offset,
+                typ,
+                sym,
+                addend,
+            },
+        ))
     }
 }
