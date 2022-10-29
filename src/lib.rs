@@ -232,13 +232,21 @@ pub enum DynamicTag {
     FiniArray = 26,
     InitArraySz = 27,
     FiniArraySz = 28,
+
+    Flags = 30,
+
+    // OS-specific tags
     LoOs = 0x6000_0000,
-    HiOs = 0x6fff_ffff,
+    GnuHash = 0x6fff_fef5,
+    VerSym = 0x6fff_fff0,
+    RelACount = 0x6fff_fff9,
+    Flags1 = 0x6fff_fffb,
+    VerDef = 0x6fff_fffc,
+    VerDefNum = 0x6fff_fffd,
+    VerNeed = 0x6fff_fffe,
+    VerNeedNum = 0x6fff_ffff,
     LoProc = 0x7000_0000,
     HiProc = 0x7fff_ffff,
-    GnuHash = 0x6fff_fef5,
-    Flags1 = 0x6fff_fffb,
-    RelACount = 0x6fff_fff9,
 }
 
 impl_parse_for_enum!(DynamicTag, le_u64);
