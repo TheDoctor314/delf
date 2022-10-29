@@ -1,6 +1,6 @@
 use crate::{
-    Addr, DynamicEntry, DynamicTag, File, HexDump, Machine, ProgramHdr, Rela, SegmentContents,
-    SegmentFlag, SegmentType, Type,
+    Addr, DynamicEntry, DynamicTag, File, HexDump, Machine, ProgramHdr, RelType, Rela,
+    SegmentContents, SegmentFlag, SegmentType, Type,
 };
 
 pub type Input<'a> = &'a [u8];
@@ -185,7 +185,8 @@ impl Rela {
     pub fn parse(i: Input) -> self::Result<Self> {
         use nom::{number::complete::le_u32, sequence::tuple};
 
-        let (i, (offset, typ, sym, addend)) = tuple((Addr::parse, le_u32, le_u32, Addr::parse))(i)?;
+        let (i, (offset, typ, sym, addend)) =
+            tuple((Addr::parse, RelType::parse, le_u32, Addr::parse))(i)?;
 
         Ok((
             i,

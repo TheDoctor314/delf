@@ -246,10 +246,20 @@ impl_parse_for_enum!(DynamicTag, le_u64);
 #[derive(Debug)]
 pub struct Rela {
     pub offset: Addr,
-    pub typ: u32,
+    pub typ: RelType,
     pub sym: u32,
     pub addend: Addr,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromPrimitive)]
+#[repr(u32)]
+pub enum RelType {
+    GlobDat = 6,
+    JumpSlot = 7,
+    Relative = 8,
+}
+
+impl_parse_for_enum!(RelType, le_u32);
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Add, Sub)]
 pub struct Addr(pub u64);

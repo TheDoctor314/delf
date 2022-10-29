@@ -52,8 +52,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     {
         println!("Mapping segment @ {:?} with {:?}", ph.mem_range(), ph.flags);
 
-        // NOTE: mmap-ing would fail if the segments were not aligned on
-        // pages, here that's not a problem.
         let mem_range = ph.mem_range();
         let len: usize = (mem_range.end - mem_range.start).into();
 
@@ -74,6 +72,35 @@ fn main() -> Result<(), Box<dyn Error>> {
             let dst = unsafe { std::slice::from_raw_parts_mut(addr.add(padding), ph.data.len()) };
 
             dst.copy_from_slice(&ph.data[..]);
+        }
+
+        println!("Applying relocations (if any)...");
+        for reloc in &rela_entries {
+            if mem_range.contains(&reloc.offset) {
+                unsafe {
+                    let real_segment_start = addr.add(padding);
+
+                    let specified_reloc_offset = reloc.offset;
+                    let specified_segment_start = mem_range.start;
+                    let offset_into_segment = specified_reloc_offset - specified_segment_start;
+
+                    println!(
+                        "Applying {:?} relocation @ {:?} from segment start",
+                        reloc.typ, offset_into_segment
+                    );
+
+                    let reloc_addr: *mut u64 =
+                        std::mem::transmute(real_segment_start.add(offset_into_segment.into()));
+                    match reloc.typ {
+                        delf::RelType::Relative => {
+                            let reloc_value = reloc.addend + delf::Addr(base as u64);
+                            println!("Replacing with value {:?}", reloc_value);
+                            *reloc_addr = reloc_value.0;
+                        }
+                        typ => panic!("Unsupported relocation type {:?}", typ),
+                    }
+                }
+            }
         }
 
         println!("Adjusting permissions...");
