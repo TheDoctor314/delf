@@ -19,6 +19,28 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("Could not read relocations: {:?}", e);
         Default::default()
     });
+    println!("Found {} rela entries", rela_entries.len());
+    for entry in &rela_entries {
+        println!("{:?}", entry);
+    }
+
+    if let Some(dynseg) = file.segment_of_type(delf::SegmentType::Dynamic) {
+        if let delf::SegmentContents::Dynamic(ref dyntab) = dynseg.contents {
+            println!("Dynamic table entries:");
+            for e in dyntab {
+                println!("{e:?}");
+
+                use delf::DynamicTag::*;
+                match e.tag {
+                    Needed | RPath => {
+                        println!(" => {:?}", file.get_string(e.addr)?);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
     let base = 0x400000_usize;
     println!("Loading with base address @ 0x{:x}", base);
     let non_empty_load_segments = file
@@ -62,14 +84,19 @@ fn main() -> Result<(), Box<dyn Error>> {
                     let reloc_addr = real_segment_start.add(offset_into_segment.into());
 
                     match reloc.typ {
-                        delf::RelType::Relative => {
-                            // this assumes `reloc_addr` is 8-byte aligned.
-                            // if this isn't the case, we would crash.
-                            let reloc_addr: *mut u64 = std::mem::transmute(reloc_addr);
-                            let reloc_value = reloc.addend + delf::Addr(base as u64);
-                            *reloc_addr = reloc_value.0;
+                        delf::RelType::Known(t) => {
+                            match t {
+                                delf::KnownRelType::Relative => {
+                                    // this assumes `reloc_addr` is 8-byte aligned.
+                                    // if this isn't the case, we would crash.
+                                    let reloc_addr: *mut u64 = std::mem::transmute(reloc_addr);
+                                    let reloc_value = reloc.addend + delf::Addr(base as u64);
+                                    *reloc_addr = reloc_value.0;
+                                }
+                                typ => panic!("Unsupported relocation type {:?}", typ),
+                            }
                         }
-                        typ => panic!("Unsupported relocation type {:?}", typ),
+                        delf::RelType::Unknown(_) => {}
                     }
                 }
             }
