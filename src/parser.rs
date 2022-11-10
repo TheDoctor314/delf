@@ -1,7 +1,4 @@
-use crate::{
-    Addr, DynamicEntry, DynamicTag, File, HexDump, Machine, ProgramHdr, RelType, Rela,
-    SegmentContents, SegmentFlag, SegmentType, Type,
-};
+use crate::*;
 
 pub type Input<'a> = &'a [u8];
 pub type Result<'a, O> = nom::IResult<Input<'a>, O, nom::error::VerboseError<Input<'a>>>;
@@ -197,5 +194,16 @@ impl Rela {
                 addend,
             },
         ))
+    }
+}
+
+impl RelType {
+    pub fn parse(i: Input) -> self::Result<Self> {
+        use nom::{branch::alt, combinator::map, number::complete::le_u32};
+
+        alt((
+            map(KnownRelType::parse, Self::Known),
+            map(le_u32, Self::Unknown),
+        ))(i)
     }
 }

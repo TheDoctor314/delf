@@ -17,10 +17,22 @@ pub enum ReadRelaError {
     RelaNotFound,
     #[error("RelaSz dynamic entry not found")]
     RelaSzNotFound,
-    #[error("Rela segment not found")]
-    RelaSegmentNotFound,
+    #[error("RelaEnt dynamic entry not found")]
+    RelaEntNotFound,
+    #[error("RelaSeg dynamic entry not found")]
+    RelaSegNotFound,
     #[error("Parsing error")]
     ParsingErr(nom::error::VerboseErrorKind),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum GetStringError {
+    #[error("StrTab dynamic entry not found")]
+    StrTabNotFound,
+    #[error("StrTab segment not found")]
+    StrTabSegmentNotFound,
+    #[error("String not found")]
+    StringNotFound,
 }
 
 #[derive(Debug)]
@@ -45,15 +57,39 @@ impl File {
         self.program_headers.iter().find(|ph| ph.typ == typ)
     }
 
-    /// Returns the matching dynamic entry.
-    pub fn dynamic_entry(&self, tag: DynamicTag) -> Option<Addr> {
-        match self.segment_of_type(SegmentType::Dynamic) {
-            Some(ProgramHdr {
-                contents: SegmentContents::Dynamic(entries),
-                ..
-            }) => entries.iter().find(|e| e.tag == tag).map(|e| e.addr),
-            _ => None,
+    /// Returns a slice containing the contents of the relevant Load segment
+    /// starting at `mem_addr` until the end of that segment, or None if no
+    /// suitable segment is found.
+    pub fn slice_at(&self, mem_addr: Addr) -> Option<&[u8]> {
+        self.segment_at(mem_addr)
+            .map(|seg| &seg.data[(mem_addr - seg.mem_range().start).into()..])
+    }
+
+    /// Gets the dynamic entries in the segment.
+    pub fn dynamic_table(&self) -> Option<&[DynamicEntry]> {
+        if let Some(ProgramHdr {
+            contents: SegmentContents::Dynamic(entries),
+            ..
+        }) = self.segment_of_type(SegmentType::Dynamic)
+        {
+            Some(entries)
+        } else {
+            None
         }
+    }
+
+    /// Gets the matching dynamic entries.
+    pub fn dynamic_entries(&self, tag: DynamicTag) -> impl Iterator<Item = Addr> + '_ {
+        self.dynamic_table()
+            .unwrap_or_default()
+            .iter()
+            .filter(move |e| e.tag == tag)
+            .map(|e| e.addr)
+    }
+
+    /// Gets the first matching dynamic entry.
+    pub fn dynamic_entry(&self, tag: DynamicTag) -> Option<Addr> {
+        self.dynamic_entries(tag).next()
     }
 
     pub fn read_rela_entries(&self) -> Result<Vec<Rela>, ReadRelaError> {
@@ -62,13 +98,16 @@ impl File {
 
         let addr = self.dynamic_entry(DT::Rela).ok_or(E::RelaNotFound)?;
         let len = self.dynamic_entry(DT::RelaSz).ok_or(E::RelaSzNotFound)?;
-        let seg = self.segment_at(addr).ok_or(E::RelaSzNotFound)?;
+        let ent = self.dynamic_entry(DT::RelaEnt).ok_or(E::RelaEntNotFound)?;
 
-        let i = &seg.data[(addr - seg.mem_range().start).into()..][..len.into()];
+        let i = self.slice_at(addr).ok_or(E::RelaSegNotFound)?;
+        let i = &i[..len.into()];
 
-        use nom::multi::many0;
+        let n = (len.0 / ent.0) as usize;
 
-        match many0(Rela::parse)(i) {
+        use nom::multi::many_m_n;
+
+        match many_m_n(n, n, Rela::parse)(i) {
             Ok((_, entries)) => Ok(entries),
             Err(nom::Err::Error(err) | nom::Err::Failure(err)) => {
                 let (_input, error_kind) = &err.errors[0];
@@ -77,6 +116,27 @@ impl File {
             // nom::Err::Incomplete(_) is unlikely since we don't use any streaming parsers
             _ => unreachable!(),
         }
+    }
+
+    pub fn get_string(&self, offset: Addr) -> Result<String, GetStringError> {
+        use DynamicTag as DT;
+        use GetStringError as E;
+
+        let addr = self.dynamic_entry(DT::StrTab).ok_or(E::StrTabNotFound)?;
+        let slice = self
+            .slice_at(addr + offset)
+            .ok_or(E::StrTabSegmentNotFound)?;
+
+        // the strings are null-terminated so we split the string and take the first item.
+        let string_slice = slice.split(|&c| c == 0).next().ok_or(E::StringNotFound)?;
+
+        Ok(String::from_utf8_lossy(string_slice).into())
+    }
+
+    pub fn dynamic_entry_strings(&self, tag: DynamicTag) -> impl Iterator<Item = String> + '_ {
+        // This will silently ignore the strings we are unable to retrieve.
+        self.dynamic_entries(tag)
+            .filter_map(|addr| self.get_string(addr).ok())
     }
 }
 
@@ -196,8 +256,8 @@ pub enum SegmentContents {
 
 #[derive(Debug)]
 pub struct DynamicEntry {
-    tag: DynamicTag,
-    addr: Addr,
+    pub tag: DynamicTag,
+    pub addr: Addr,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromPrimitive)]
@@ -261,13 +321,21 @@ pub struct Rela {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromPrimitive)]
 #[repr(u32)]
-pub enum RelType {
+pub enum KnownRelType {
+    _64 = 1,
+    Copy = 5,
     GlobDat = 6,
     JumpSlot = 7,
     Relative = 8,
 }
 
-impl_parse_for_enum!(RelType, le_u32);
+impl_parse_for_enum!(KnownRelType, le_u32);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RelType {
+    Known(KnownRelType),
+    Unknown(u32),
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Add, Sub)]
 pub struct Addr(pub u64);
