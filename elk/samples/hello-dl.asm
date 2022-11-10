@@ -5,7 +5,7 @@
 
 _start: mov rdi, 1      ; stdout fd
         mov rsi, msg
-        mov rdx, 12     ; 11 chars + '\n'
+        mov rdx, 38     ; 11 chars + '\n'
         mov rax, 1      ; write syscall
         syscall
 

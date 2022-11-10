@@ -3,5 +3,5 @@
 
         ; we have only the data section here
         section .data
-msg:    db "Hello world", 10
+msg:    db "this is way longer than sixteen bytes", 10
  .end:
