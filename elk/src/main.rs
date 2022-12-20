@@ -13,7 +13,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         Some(f) => f,
         None => std::process::exit(1),
     };
-    println!("{file:#?}");
+    // println!("{file:#?}");
 
     let rela_entries = file.read_rela_entries().unwrap_or_else(|e| {
         println!("Could not read relocations: {:?}", e);
@@ -32,6 +32,29 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     for sh in &file.section_headers {
         println!("{sh:?}");
+    }
+
+    let syms = file.read_syms().unwrap();
+    println!(
+        "Symbol table @ {:?} contains {} entries",
+        file.dynamic_entry(delf::DynamicTag::SymTab).unwrap(),
+        syms.len()
+    );
+    println!(
+        "  {:6}{:12}{:10}{:16}{:16}{:12}{:12}",
+        "Num", "Value", "Size", "Type", "Bind", "Ndx", "Name"
+    );
+    for (num, s) in syms.iter().enumerate() {
+        println!(
+            "  {:6}{:12}{:10}{:16}{:16}{:12}{:12}",
+            format!("{}", num),
+            format!("{:?}", s.value),
+            format!("{:?}", s.size),
+            format!("{:?}", s.typ),
+            format!("{:?}", s.bind),
+            format!("{:?}", s.shnidx),
+            format!("{}", file.get_string(s.name).unwrap_or_default()),
+        );
     }
 
     let base = 0x400000_usize;
