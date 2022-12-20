@@ -41,6 +41,7 @@ pub struct File {
     pub machine: Machine,
     pub entry_point: Addr,
     pub program_headers: Vec<ProgramHdr>,
+    pub section_headers: Vec<SectionHdr>,
 }
 
 impl File {
@@ -214,6 +215,20 @@ impl fmt::Debug for ProgramHdr {
     }
 }
 
+#[derive(Debug)]
+pub struct SectionHdr {
+    pub name: Addr,
+    pub typ: u32,
+    pub flags: u64,
+    pub addr: Addr,
+    pub off: Addr,
+    pub size: Addr,
+    pub link: u32,
+    pub info: u32,
+    pub addralign: Addr,
+    pub entsize: Addr,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromPrimitive)]
 #[repr(u32)]
 pub enum SegmentType {
@@ -335,6 +350,65 @@ impl_parse_for_enum!(KnownRelType, le_u32);
 pub enum RelType {
     Known(KnownRelType),
     Unknown(u32),
+}
+
+#[derive(Debug)]
+pub struct Sym {
+    pub name: Addr,
+    pub bind: Option<SymBind>,
+    pub typ: Option<SymType>,
+    pub shnidx: SectionIdx,
+    pub value: Addr,
+    pub size: u64,
+}
+
+#[derive(Debug, Clone, Copy, TryFromPrimitive)]
+#[repr(u8)]
+pub enum SymBind {
+    Local = 0,
+    Global = 1,
+    Weak = 2,
+}
+
+#[derive(Debug, Clone, Copy, TryFromPrimitive)]
+#[repr(u8)]
+pub enum SymType {
+    None = 0,
+    Object = 1,
+    Func = 2,
+    Section = 3,
+}
+
+pub struct SectionIdx(pub u16);
+
+impl SectionIdx {
+    pub fn is_undef(&self) -> bool {
+        self.0 == 0
+    }
+
+    pub fn is_special(&self) -> bool {
+        self.0 >= 0xff00
+    }
+
+    pub fn get(&self) -> Option<usize> {
+        if self.is_undef() || self.is_special() {
+            None
+        } else {
+            Some(self.0 as usize)
+        }
+    }
+}
+
+impl fmt::Debug for SectionIdx {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.is_special() {
+            write!(f, "Special({:04x})", self.0)
+        } else if self.is_undef() {
+            write!(f, "Undef")
+        } else {
+            write!(f, "{}", self.0)
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Add, Sub)]

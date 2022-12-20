@@ -173,6 +173,13 @@ impl File {
             program_headers.push(ph);
         }
 
+        let sh_slices = full_input[sh_offset.into()..].chunks(sh_entsize);
+        let mut section_headers = Vec::new();
+        for sh_slice in sh_slices.take(sh_count) {
+            let (_, sh) = SectionHdr::parse(sh_slice)?;
+            section_headers.push(sh);
+        }
+
         Ok((
             i,
             Self {
@@ -180,6 +187,7 @@ impl File {
                 machine,
                 entry_point,
                 program_headers,
+                section_headers,
             },
         ))
     }
@@ -227,6 +235,45 @@ impl ProgramHdr {
     }
 }
 
+impl SectionHdr {
+    pub fn parse(i: Input) -> self::Result<Self> {
+        use nom::{
+            combinator::map,
+            number::complete::{le_u32, le_u64},
+            sequence::tuple,
+        };
+
+        let (i, (name, typ, flags, addr, off, size, link, info, addralign, entsize)) =
+            tuple((
+                map(le_u32, |x| Addr(x as u64)),
+                le_u32,
+                le_u64,
+                Addr::parse,
+                Addr::parse,
+                Addr::parse,
+                le_u32,
+                le_u32,
+                Addr::parse,
+                Addr::parse,
+            ))(i)?;
+
+        let res = Self {
+            name,
+            typ,
+            flags,
+            addr,
+            off,
+            size,
+            link,
+            info,
+            addralign,
+            entsize,
+        };
+
+        Ok((i, res))
+    }
+}
+
 impl DynamicEntry {
     pub fn parse(i: Input) -> self::Result<Self> {
         use nom::sequence::tuple;
@@ -262,5 +309,50 @@ impl RelType {
             map(KnownRelType::parse, Self::Known),
             map(le_u32, Self::Unknown),
         ))(i)
+    }
+}
+
+impl Sym {
+    pub fn parse(i: Input) -> self::Result<Self> {
+        use nom::{
+            bits::bits,
+            combinator::map,
+            number::complete::{le_u16, le_u32, le_u64, le_u8},
+            sequence::tuple,
+        };
+
+        let (i, (name, (bind, typ), _reserved, shnidx, value, size)) = tuple((
+            map(le_u32, |x| Addr(x as u64)),
+            bits(tuple((SymBind::parse, SymType::parse))),
+            le_u8,
+            map(le_u16, SectionIdx),
+            Addr::parse,
+            le_u64,
+        ))(i)?;
+
+        let res = Self {
+            name,
+            bind,
+            typ,
+            shnidx,
+            value,
+            size,
+        };
+
+        Ok((i, res))
+    }
+}
+
+impl SymBind {
+    pub fn parse(i: BitInput) -> BitResult<Option<Self>> {
+        use nom::{bits::complete::take, combinator::map};
+        map(take(4_usize), |i: u8| Self::try_from(i).ok())(i)
+    }
+}
+
+impl SymType {
+    pub fn parse(i: BitInput) -> BitResult<Option<Self>> {
+        use nom::{bits::complete::take, combinator::map};
+        map(take(4_usize), |i: u8| Self::try_from(i).ok())(i)
     }
 }
