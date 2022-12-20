@@ -22,7 +22,7 @@ pub enum ReadRelaError {
     #[error("RelaSeg dynamic entry not found")]
     RelaSegNotFound,
     #[error("Parsing error")]
-    ParsingErr(nom::error::VerboseErrorKind),
+    ParsingErr(parser::ErrorKind),
 }
 
 #[derive(Debug, thiserror::Error)]
