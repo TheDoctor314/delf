@@ -35,6 +35,18 @@ pub enum GetStringError {
     StringNotFound,
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum ReadSymsError {
+    #[error("SymTab dynamic entry not found")]
+    SymTabNotFound,
+    #[error("SymTab section not found")]
+    SymTabSectionNotFound,
+    #[error("SymTab segment not found")]
+    SymTabSegNotFound,
+    #[error("Parsing error")]
+    ParsingErr(parser::ErrorKind),
+}
+
 #[derive(Debug)]
 pub struct File {
     pub typ: Type,
@@ -138,6 +150,35 @@ impl File {
         // This will silently ignore the strings we are unable to retrieve.
         self.dynamic_entries(tag)
             .filter_map(|addr| self.get_string(addr).ok())
+    }
+
+    /// Returns the section header starting at *exactly* this virtual address,
+    /// or `None` otherwise.
+    pub fn section_starting_at(&self, addr: Addr) -> Option<&SectionHdr> {
+        self.section_headers.iter().find(|sh| sh.addr == addr)
+    }
+
+    pub fn read_syms(&self) -> Result<Vec<Sym>, ReadSymsError> {
+        use DynamicTag as DT;
+        use ReadSymsError as E;
+
+        let addr = self.dynamic_entry(DT::SymTab).ok_or(E::SymTabNotFound)?;
+        let section = self
+            .section_starting_at(addr)
+            .ok_or(E::SymTabSectionNotFound)?;
+
+        let i = self.slice_at(addr).ok_or(E::SymTabSegNotFound)?;
+        let n = (section.size.0 / section.entsize.0) as usize;
+
+        use nom::multi::many_m_n;
+        match many_m_n(n, n, Sym::parse)(i) {
+            Ok((_, syms)) => Ok(syms),
+            Err(nom::Err::Failure(err) | nom::Err::Error(err)) => {
+                let (_input, error_kind) = &err.errors[0];
+                Err(E::ParsingErr(error_kind.clone()))
+            }
+            _ => unreachable!(),
+        }
     }
 }
 
