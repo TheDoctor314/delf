@@ -24,21 +24,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("{:?}", entry);
     }
 
-    if let Some(dynseg) = file.segment_of_type(delf::SegmentType::Dynamic) {
-        if let delf::SegmentContents::Dynamic(ref dyntab) = dynseg.contents {
-            println!("Dynamic table entries:");
-            for e in dyntab {
-                println!("{e:?}");
-
-                use delf::DynamicTag::*;
-                match e.tag {
-                    Needed | RPath => {
-                        println!(" => {:?}", file.get_string(e.addr)?);
-                    }
-                    _ => {}
-                }
-            }
+    if let Some(entries) = file.dynamic_table() {
+        for e in entries {
+            println!("{e:?}");
         }
+    }
+
+    for sh in &file.section_headers {
+        println!("{sh:?}");
     }
 
     let base = 0x400000_usize;
