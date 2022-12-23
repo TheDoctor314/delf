@@ -348,8 +348,10 @@ pub enum DynamicTag {
     FiniArray = 26,
     InitArraySz = 27,
     FiniArraySz = 28,
-
     Flags = 30,
+    RelrSz = 35,
+    Relr = 36,
+    RelrEnt = 37,
 
     // OS-specific tags
     LoOs = 0x6000_0000,
