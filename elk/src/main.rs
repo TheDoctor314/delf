@@ -6,7 +6,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let input_path = std::env::args().nth(1).expect("usage: elk FILE");
 
     let mut proc = process::Process::new();
-    proc.load_object(input_path)?;
+    proc.load_object_and_deps(input_path)?;
     println!("{:#?}", proc);
     Ok(())
 }

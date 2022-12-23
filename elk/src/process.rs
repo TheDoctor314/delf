@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
 use custom_debug_derive::Debug as CustomDebug;
 use mmap::MemoryMap;
@@ -15,9 +18,25 @@ pub enum LoadError {
     ParseError(PathBuf),
 }
 
+pub enum GetResult {
+    Cached(usize),
+    Fresh(usize),
+}
+
+impl GetResult {
+    pub fn fresh(self) -> Option<usize> {
+        if let Self::Fresh(i) = self {
+            Some(i)
+        } else {
+            None
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Process {
     pub objects: Vec<Object>,
+    pub objects_by_path: HashMap<PathBuf, usize>,
     pub search_path: Vec<PathBuf>,
 }
 
@@ -25,6 +44,7 @@ impl Process {
     pub fn new() -> Self {
         Self {
             objects: Vec::new(),
+            objects_by_path: HashMap::new(),
             search_path: vec!["/usr/lib/".into()],
         }
     }
@@ -53,12 +73,8 @@ impl Process {
                 .map(PathBuf::from),
         );
 
-        let deps: Vec<_> = file
-            .dynamic_entry_strings(delf::DynamicTag::Needed)
-            .collect();
-
         let res = Object {
-            path,
+            path: path.clone(),
             base: delf::Addr(0x40_0000),
             maps: Vec::new(),
             file,
@@ -66,10 +82,29 @@ impl Process {
 
         let index = self.objects.len();
         self.objects.push(res);
+        self.objects_by_path.insert(path, index);
 
-        for dep in deps {
-            self.load_object(self.object_path(&dep)?)?;
+        Ok(index)
+    }
+
+    pub fn load_object_and_deps(&mut self, path: impl AsRef<Path>) -> Result<usize, LoadError> {
+        let index = self.load_object(path)?;
+        let mut a = vec![index];
+
+        while !a.is_empty() {
+            a = a
+                .into_iter()
+                .map(|i| &self.objects[i].file)
+                .flat_map(|file| file.dynamic_entry_strings(delf::DynamicTag::Needed))
+                .collect::<Vec<_>>()
+                .into_iter()
+                .map(|dep| self.get_object(&dep))
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .filter_map(GetResult::fresh)
+                .collect();
         }
+
         Ok(index)
     }
 
@@ -79,6 +114,14 @@ impl Process {
             .filter_map(|prefix| prefix.join(name).canonicalize().ok())
             .find(|path| path.exists())
             .ok_or_else(|| LoadError::NotFound(name.into()))
+    }
+
+    pub fn get_object(&mut self, name: &str) -> Result<GetResult, LoadError> {
+        let path = self.object_path(name)?;
+        self.objects_by_path
+            .get(&path)
+            .map(|&i| Ok(GetResult::Cached(i)))
+            .unwrap_or_else(|| self.load_object(path).map(GetResult::Fresh))
     }
 }
 
